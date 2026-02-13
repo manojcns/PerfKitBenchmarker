@@ -549,7 +549,11 @@ class GkeCluster(BaseGkeCluster):
     ):
       cmd.args.append('--enable-fast-socket')
 
-    if FLAGS.gke_node_system_config is not None:
+    if (
+        FLAGS.gke_node_system_config is not None
+        and nodepool_config.name != container_service.DEFAULT_NODEPOOL
+        and nodepool_config.name != 'clients'
+    ):
       cmd.flags['system-config-from-file'] = FLAGS.gke_node_system_config
 
     if nodepool_config.sandbox_config is not None:
