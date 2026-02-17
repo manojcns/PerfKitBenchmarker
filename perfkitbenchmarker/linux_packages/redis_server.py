@@ -21,6 +21,7 @@ from perfkitbenchmarker import errors
 from perfkitbenchmarker import linux_packages
 from perfkitbenchmarker import provider_info
 from perfkitbenchmarker import vm_util
+import time
 
 
 class RedisEvictionPolicy:
@@ -380,8 +381,6 @@ def Stop(vm) -> None:
           f'Waiting for Redis on port {port} to shut down... (RC={return_code},'
           f' stderr="{stderr}")'
       )
-      import time
-
       time.sleep(1)
     else:
       # If we exhausted retries
