@@ -14,6 +14,8 @@
 """Module containing HAProxy installation and configuration for Redis HA."""
 
 from absl import flags
+from perfkitbenchmarker import errors
+from perfkitbenchmarker import vm_util
 
 FLAGS = flags.FLAGS
 
@@ -75,19 +77,14 @@ backend redis_replica
   vm.RemoteCommand(f'echo "{config_content}" | sudo tee {HAPROXY_CONFIG}')
 
 
-def Start(vm):
-  """Starts HAProxy as a background process."""
-  # Start HAProxy directly (not via systemctl - doesn't exist in containers)
-  vm.RemoteCommand('sudo haproxy -f /etc/haproxy/haproxy.cfg -D')
-
-  # Wait for HAProxy to start
-  vm.RemoteCommand('sleep 3')
-
-  # Verify HAProxy is running
+@vm_util.Retry(poll_interval=2, timeout=30)
+def _WaitForHAProxyUp(vm):
+  """Waits until HAProxy is running and listening on its ports."""
   haproxy_check = vm.RemoteCommand('pgrep -f haproxy', ignore_failure=True)[0]
   if not haproxy_check:
-    vm.RemoteCommand('echo "HAProxy failed to start"')
-    raise Exception('HAProxy failed to start')
+    raise errors.Resource.RetryableCreationError(
+        'HAProxy process not found yet.'
+    )
 
   # Check if HAProxy is listening on ports 6379 and 6380
   vm.RemoteCommand('echo "=== Checking HAProxy ports ==="')
@@ -96,12 +93,24 @@ def Start(vm):
       ignore_failure=True,
   )
 
-  # Verify ports are open
-  vm.RemoteCommand(
-      'nc -zv localhost 6379 || echo "Port 6379 not reachable"',
-      ignore_failure=True,
+  # Verify ports are reachable via netcat
+  _, _, rc_6379 = vm.RemoteCommandWithReturnCode(
+      'nc -zv localhost 6379', ignore_failure=True
   )
-  vm.RemoteCommand(
-      'nc -zv localhost 6380 || echo "Port 6380 not reachable"',
-      ignore_failure=True,
+  _, _, rc_6380 = vm.RemoteCommandWithReturnCode(
+      'nc -zv localhost 6380', ignore_failure=True
   )
+
+  if rc_6379 != 0 or rc_6380 != 0:
+    raise errors.Resource.RetryableCreationError(
+        'HAProxy ports not reachable yet.'
+    )
+
+
+def Start(vm):
+  """Starts HAProxy as a background process."""
+  # Start HAProxy directly (not via systemctl - doesn't exist in containers)
+  vm.RemoteCommand('sudo haproxy -f /etc/haproxy/haproxy.cfg -D')
+
+  _WaitForHAProxyUp(vm)
+  vm.RemoteCommand('echo "=== HAProxy started successfully ==="')

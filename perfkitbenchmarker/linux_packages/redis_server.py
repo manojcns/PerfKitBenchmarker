@@ -21,7 +21,6 @@ from perfkitbenchmarker import errors
 from perfkitbenchmarker import linux_packages
 from perfkitbenchmarker import provider_info
 from perfkitbenchmarker import vm_util
-import time
 
 
 class RedisEvictionPolicy:
@@ -341,6 +340,23 @@ def Start(vm) -> None:
     _WaitForRedisUp(vm, port)
 
 
+@vm_util.Retry(poll_interval=1, timeout=15)
+def _WaitForRedisDown(vm, port):
+  """Wait until redis server is down on a given port."""
+  redis_dir = GetRedisDir()
+  localhost = vm.GetLocalhostAddr()
+  cli_binary = GetRedisCliBinary()
+  _, stderr, return_code = vm.RemoteCommandWithReturnCode(
+      f'sudo {redis_dir}/src/{cli_binary} -h {localhost} -p {port} ping',
+      ignore_failure=True,
+  )
+  if return_code == 0 or 'Could not connect to' not in stderr:
+    raise errors.Resource.RetryableDeletionError(
+        f'Redis on port {port} is still running. (RC={return_code}, '
+        f'stderr="{stderr}")'
+    )
+
+
 def Stop(vm) -> None:
   """Stops redis server processes, flushes all keys, and resets the cluster."""
   redis_dir = GetRedisDir()
@@ -368,25 +384,7 @@ def Stop(vm) -> None:
 
   for port in ports:
     # Check that redis server is not running anymore.
-    # Retry a few times to allow for shutdown delay
-    for _ in range(10):
-      _, stderr, return_code = vm.RemoteCommandWithReturnCode(
-          f'sudo {redis_dir}/src/{cli_binary} -h {localhost} -p {port} ping',
-          ignore_failure=True,
-      )
-      # If return code is non-zero and we see the connection error, it's down.
-      if return_code != 0 and 'Could not connect to' in stderr:
-        break
-      logging.info(
-          f'Waiting for Redis on port {port} to shut down... (RC={return_code},'
-          f' stderr="{stderr}")'
-      )
-      time.sleep(1)
-    else:
-      # If we exhausted retries
-      raise errors.Error(
-          f'Redis on port {port} failed to shut down. Last stderr: {stderr}'
-      )
+    _WaitForRedisDown(vm, port)
 
 
 def StartCluster(server_vms) -> None:
