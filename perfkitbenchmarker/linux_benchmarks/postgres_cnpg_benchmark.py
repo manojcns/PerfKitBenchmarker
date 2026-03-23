@@ -604,7 +604,7 @@ def _PrepareSysbenchClient(bm_spec):
     profile = OPTIMIZATION_PROFILES.get(profile_name, OPTIMIZATION_PROFILES['baseline'])
     client_image = profile.get('client_image', 'ubuntu:22.04') 
     
-    template_params = {'namespace': 'default', 'client_image': client_image}
+    template_params = {'namespace': 'default', 'client_image': client_image, 'password': _GetPostgresPassword()}
     
     try:
         with kubernetes_helper.CreateRenderedManifestFile(

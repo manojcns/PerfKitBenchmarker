@@ -185,6 +185,7 @@ MACHINE_DISK_MAPPING = {
 }
 
 # Optimization profiles
+# NOTE: These profile memory and CPU values are tuned for c4-standard-16 and n2-standard-16 only.
 OPTIMIZATION_PROFILES = {
     'baseline': {
         'postgres': {
@@ -321,8 +322,8 @@ OPTIMIZATION_PROFILES = {
         'resources': {
             'cpu_request': '14',
             'cpu_limit': '15',
-            'memory_request': '15Gi',
-            'memory_limit': '15Gi',
+            'memory_request': '13.5Gi',
+            'memory_limit': '13.5Gi',
         },
         'use_init_container': True,
         'node_image': 'UBUNTU_CONTAINERD',
@@ -423,8 +424,8 @@ OPTIMIZATION_PROFILES = {
         'resources': {
             'cpu_request': '14',
             'cpu_limit': '15',
-            'memory_request': '15Gi',
-            'memory_limit': '15Gi',
+            'memory_request': '13.5Gi',
+            'memory_limit': '13.5Gi',
         },
         'use_init_container': True,
         'node_image': 'COS_CONTAINERD',
@@ -469,8 +470,8 @@ OPTIMIZATION_PROFILES = {
         'resources': {
             'cpu_request': '14',
             'cpu_limit': '15',
-            'memory_request': '15Gi',
-            'memory_limit': '15Gi',
+            'memory_request': '13.5Gi',
+            'memory_limit': '13.5Gi',
         },
         'use_init_container': True,
         'node_image': 'COS_CONTAINERD',
@@ -651,13 +652,12 @@ def _PreparePostgreSQLCluster(bm_spec: benchmark_spec.BenchmarkSpec) -> None:
     }
 
     # Dynamic Memory Adjustment:
-    # If HugePages are enabled (38Gi), we MUST reduce the standard memory request/limit
-    # to fit within the node's capacity (e.g., 64GB for standard-16).
-    # 38Gi (HugePages) + 45Gi (Request) = 83Gi > 64GB -> Failure!
+    # If HugePages are enabled, we maintain a safeguard to force-set memory to 13.5Gi
+    # to ensure it fits system overhead on standard nodes (e.g. c4-standard-16).
     if hugepages and hugepages.get('hugepage_size2m', 0) > 0:
-        logging.info('HugePages enabled: Reducing standard memory request to 15Gi to fit node capacity.')
-        template_params['memory_request'] = '15Gi'
-        template_params['memory_limit'] = '15Gi'
+        logging.info('HugePages enabled: Enforcing safe memory request of 13.5Gi to fit node capacity (shared_buffers uses HugePages).')
+        template_params['memory_request'] = '13.5Gi'
+        template_params['memory_limit'] = '13.5Gi'
     else:
         # If no HugePages, we can use the full memory for standard RAM
         logging.info('HugePages disabled: Using full memory profile (45Gi/55Gi).')
@@ -789,6 +789,7 @@ def _PrepareSysbenchClient(bm_spec: benchmark_spec.BenchmarkSpec) -> None:
         template_params = {
             'namespace': 'default',
             'client_image': profile.get('client_image', 'ubuntu:20.04'),
+            'password': _GetPostgresPassword(),
         }
 
         with kubernetes_helper.CreateRenderedManifestFile(

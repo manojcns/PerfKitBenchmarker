@@ -551,7 +551,7 @@ class GkeCluster(BaseGkeCluster):
 
     if (
         FLAGS.gke_node_system_config is not None
-        and nodepool_config.name != container_service.DEFAULT_NODEPOOL
+        and nodepool_config.name != container_spec_lib.DEFAULT_NODEPOOL
         and nodepool_config.name != 'clients'
     ):
       cmd.flags['system-config-from-file'] = FLAGS.gke_node_system_config

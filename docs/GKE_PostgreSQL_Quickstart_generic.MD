@@ -160,21 +160,20 @@ python3 pkb.py \
     --config_override=postgres_cnpg_benchmark.container_cluster.nodepools.clients.vm_spec.GCP.machine_type=c4-standard-16 \
     --postgres_cnpg_instances=3 \
     --postgres_cnpg_storage_class=hyperdisk-balanced \
-    --postgres_cnpg_disk_size=500 \
+    --postgres_cnpg_disk_size=500Gi \
     --postgres_cnpg_optimization_profile=baseline \
     --sysbench_tables=10 \
     --sysbench_table_size=4000000 \
     --sysbench_run_threads=512 \
     --sysbench_run_seconds=300 \
     --sysbench_testname=oltp_read_write \
-    --run_uri=c4bsln2 \
     --metadata=cloud:GCP \
     --metadata=geo:us-central1 \
     --metadata=scenario:ha_baseline \
     --temp_dir=./pkb_temp \
     --run_stage_iterations=1 \
     --owner=$(whoami | tr '.' '-') \
-    --log_level=info \
+    --log_level=error \
     --accept_licenses
 ```
 
@@ -193,21 +192,20 @@ python3 pkb.py \
     --config_override=postgres_cnpg_benchmark.container_cluster.nodepools.clients.vm_spec.GCP.machine_type=c4-standard-16 \
     --postgres_cnpg_instances=3 \
     --postgres_cnpg_storage_class=hyperdisk-balanced \
-    --postgres_cnpg_disk_size=500 \
+    --postgres_cnpg_disk_size=500Gi \
     --postgres_cnpg_optimization_profile=v6 \
     --sysbench_tables=10 \
     --sysbench_table_size=4000000 \
     --sysbench_run_threads=512 \
     --sysbench_run_seconds=300 \
     --sysbench_testname=oltp_read_write \
-    --run_uri=c4v61 \
     --metadata=cloud:GCP \
     --metadata=geo:us-central1 \
     --metadata=scenario:ha_v6 \
     --temp_dir=./pkb_temp \
     --run_stage_iterations=1 \
     --owner=$(whoami | tr '.' '-') \
-    --log_level=info \
+    --log_level=error \
     --accept_licenses
 ```
 
