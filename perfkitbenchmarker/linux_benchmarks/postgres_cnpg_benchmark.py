@@ -28,7 +28,7 @@ from absl import flags
 from perfkitbenchmarker import benchmark_spec
 from perfkitbenchmarker import configs
 from perfkitbenchmarker import data
-from perfkitbenchmarker import kubernetes_helper
+from perfkitbenchmarker.resources.container_service import kubernetes_commands
 from perfkitbenchmarker import vm_util
 from perfkitbenchmarker import sample
 from perfkitbenchmarker import errors
@@ -519,7 +519,7 @@ def _PrepareCluster(bm_spec) -> None:
     logging.info(f"DEBUG: cluster_params keys: {list(cluster_params.keys())}")
     logging.info(f"DEBUG: hugepages_2mi_request value: '{cluster_params['hugepages_2mi_request']}'")
 
-    with kubernetes_helper.CreateRenderedManifestFile(
+    with kubernetes_commands.CreateRenderedManifestFile(
         'container/postgres_cnpg/postgres_cluster.yaml.j2',
         cluster_params
     ) as rendered_manifest:
@@ -607,7 +607,7 @@ def _PrepareSysbenchClient(bm_spec):
     template_params = {'namespace': 'default', 'client_image': client_image, 'password': _GetPostgresPassword()}
     
     try:
-        with kubernetes_helper.CreateRenderedManifestFile(
+        with kubernetes_commands.CreateRenderedManifestFile(
             'container/postgres_sysbench/client_pod.yaml.j2', template_params
         ) as rendered_manifest:
             cluster.ApplyManifest(rendered_manifest.name)

@@ -26,6 +26,7 @@ for load generation.
 import functools
 import logging
 import os
+import time
 from typing import Any, Dict, List
 
 from absl import flags
@@ -34,7 +35,7 @@ from perfkitbenchmarker import benchmark_spec
 from perfkitbenchmarker import configs
 from perfkitbenchmarker import errors
 from perfkitbenchmarker import data
-from perfkitbenchmarker import kubernetes_helper
+from perfkitbenchmarker.resources.container_service import kubernetes_commands
 from perfkitbenchmarker import sample
 from perfkitbenchmarker import vm_util
 from perfkitbenchmarker.linux_packages import sysbench
@@ -665,14 +666,13 @@ def _PreparePostgreSQLCluster(bm_spec: benchmark_spec.BenchmarkSpec) -> None:
         template_params['memory_limit'] = resources.get('memory_limit', '55Gi')
 
     # Apply manifests
-    with kubernetes_helper.CreateRenderedManifestFile(
+    with kubernetes_commands.CreateRenderedManifestFile(
         'container/postgres_sysbench/postgres_all.yaml.j2',
         template_params
     ) as rendered_manifest:
         cluster.ApplyManifest(rendered_manifest.name)
 
     # Wait a bit for resources to be created
-    import time
     logging.info('Waiting 30 seconds for resources to be created...')
     time.sleep(30)
 
@@ -792,7 +792,7 @@ def _PrepareSysbenchClient(bm_spec: benchmark_spec.BenchmarkSpec) -> None:
             'password': _GetPostgresPassword(),
         }
 
-        with kubernetes_helper.CreateRenderedManifestFile(
+        with kubernetes_commands.CreateRenderedManifestFile(
             'container/postgres_sysbench/client_pod.yaml.j2',
             template_params
         ) as rendered_manifest:
@@ -944,7 +944,6 @@ def Run(bm_spec: benchmark_spec.BenchmarkSpec) -> List[sample.Sample]:
             for i in range(3):
                 logging.info(f"Issuing Checkpoint {i+1}/3")
                 vm_util.IssueCommand(kubectl_chk)
-                import time
                 time.sleep(5)
 
             logging.info("Sleeping for 40 seconds to allow cluster to settle...")
