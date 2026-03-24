@@ -162,10 +162,6 @@ postgres_sysbench_gke:
             boot_disk_size: 100
             boot_disk_type: hyperdisk-balanced
         vm_count: 1
-  vm_groups:
-    clients:
-      vm_spec: *default_dual_core
-      vm_count: 1
   flags:
     # Sysbench defaults matching baseline
     sysbench_tables: 10
@@ -496,6 +492,16 @@ def GetConfig(user_config: Dict[str, Any]) -> Dict[str, Any]:
         Merged benchmark configuration.
     """
     config = configs.LoadConfig(BENCHMARK_CONFIG, user_config, BENCHMARK_NAME)
+
+    # Dynamically inject VM groups ONLY if VM mode is explicitly requested
+    if FLAGS.postgres_gke_client_mode == 'vm':
+        config['vm_groups'] = {
+            'clients': {
+                'vm_spec': {'GCP': {'machine_type': 'c4-standard-16'}},
+                'vm_count': 1,
+                'os_type': 'ubuntu2004'  # Hardcoded to bypass upstream PKB ubuntu2404 bug
+            }
+        }
 
     # Apply machine type overrides
     if FLAGS.postgres_gke_server_machine_type:
