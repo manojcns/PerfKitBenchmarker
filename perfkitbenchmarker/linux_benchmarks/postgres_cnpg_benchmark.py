@@ -618,11 +618,16 @@ def _PrepareSysbenchClient(bm_spec):
 
     install_commands = [
         'for i in {1..5}; do apt-get update && break || sleep 5; done',
-        'apt-get install -y git build-essential automake libtool pkg-config libmysqlclient-dev libpq-dev sysbench postgresql-client'
+        'export DEBIAN_FRONTEND=noninteractive; for i in {1..3}; do apt-get install -y git build-essential automake libtool pkg-config libmysqlclient-dev libpq-dev sysbench postgresql-client && break || sleep 15; done'
     ]
-    for cmd in install_commands:
-        k_cmd = [FLAGS.kubectl, '--kubeconfig', FLAGS.kubeconfig, 'exec', '-n', 'default', 'postgres-client', '--', 'bash', '-c', f'export DEBIAN_FRONTEND=noninteractive; {cmd}']
+    
+    @vm_util.Retry(max_retries=3, retryable_exceptions=(errors.VmUtil.IssueCommandError,))
+    def _RunInstallCmd(install_cmd):
+        k_cmd = [FLAGS.kubectl, '--kubeconfig', FLAGS.kubeconfig, 'exec', '-n', 'default', 'postgres-client', '--', 'bash', '-c', install_cmd]
         vm_util.IssueCommand(k_cmd)
+
+    for cmd in install_commands:
+        _RunInstallCmd(cmd)
 
 def Prepare(bm_spec) -> None:
     # Respect the Storage Class flag passed from CLI (e.g. by postgres-ha-cnpg-baseline-runcount.sh)

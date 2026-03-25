@@ -810,14 +810,19 @@ def _PrepareSysbenchClient(bm_spec: benchmark_spec.BenchmarkSpec) -> None:
         # Install sysbench and dependencies in pod
         install_commands = [
             'for i in {1..5}; do apt-get update && break || sleep 15; done',
-            'export DEBIAN_FRONTEND=noninteractive; apt-get install -y git build-essential automake libtool pkg-config',
-            'export DEBIAN_FRONTEND=noninteractive; apt-get install -y libmysqlclient-dev libpq-dev',
-            'export DEBIAN_FRONTEND=noninteractive; apt-get install -y sysbench postgresql-client',
+            'export DEBIAN_FRONTEND=noninteractive; for i in {1..3}; do apt-get install -y git build-essential automake libtool pkg-config && break || sleep 15; done',
+            'export DEBIAN_FRONTEND=noninteractive; for i in {1..3}; do apt-get install -y libmysqlclient-dev libpq-dev && break || sleep 15; done',
+            'export DEBIAN_FRONTEND=noninteractive; for i in {1..3}; do apt-get install -y sysbench postgresql-client && break || sleep 15; done',
         ]
-        for cmd in install_commands:
+        
+        @vm_util.Retry(max_retries=3, retryable_exceptions=(errors.VmUtil.IssueCommandError,))
+        def _RunInstallCmd(install_cmd):
             kubectl_cmd = [FLAGS.kubectl, '--kubeconfig', FLAGS.kubeconfig,
-                          'exec', '-n', 'default', 'postgres-client', '--', 'bash', '-c', cmd]
-            _, _, _ = vm_util.IssueCommand(kubectl_cmd)
+                          'exec', '-n', 'default', 'postgres-client', '--', 'bash', '-c', install_cmd]
+            vm_util.IssueCommand(kubectl_cmd)
+
+        for cmd in install_commands:
+            _RunInstallCmd(cmd)
 
 
 def _LoadDatabase(bm_spec: benchmark_spec.BenchmarkSpec) -> None:
