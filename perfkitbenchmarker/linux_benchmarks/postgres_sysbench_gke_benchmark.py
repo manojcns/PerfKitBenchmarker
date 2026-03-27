@@ -499,7 +499,7 @@ def GetConfig(user_config: Dict[str, Any]) -> Dict[str, Any]:
             'clients': {
                 'vm_spec': {'GCP': {'machine_type': 'c4-standard-16'}},
                 'vm_count': 1,
-                'os_type': 'ubuntu2004'  # Hardcoded to bypass upstream PKB ubuntu2404 bug
+                'os_type': 'ubuntu2004'  # bypass upstream ubuntu2404 bug
             }
         }
 
@@ -555,6 +555,11 @@ def GetConfig(user_config: Dict[str, Any]) -> Dict[str, Any]:
         FLAGS.gke_node_system_config = data.ResourcePath(
             'container/postgres_sysbench/hugepages-node-config.yaml'
         )
+        # FIX: GKE applies the system config globally to ALL nodepools upon creation.
+        # The default e2-standard-2 (8GB RAM) will crash trying to allocate 38GB HugePages.
+        # We upgrade the default nodepool to match the server machine type.
+        config['container_cluster']['vm_spec']['GCP']['machine_type'] = server_machine
+        logging.info('Upgraded default cluster nodepool to %s to satisfy HugePages allocation requirements.', server_machine)
 
     return config
 
@@ -574,14 +579,12 @@ def _GetPostgreSQLConfig() -> Dict[str, Any]:
     profile = OPTIMIZATION_PROFILES[FLAGS.postgres_gke_optimization_profile]
     pg_config = OPTIMIZATION_PROFILES['baseline']['postgres'].copy()
 
-    # Apply profile overrides (this is where v6 settings should apply)
     if 'postgres' in profile:
         pg_config.update(profile['postgres'])
         # Explicitly ensure huge_pages is carried over if present
         if 'huge_pages' in profile['postgres']:
             pg_config['huge_pages'] = profile['postgres']['huge_pages']
 
-    # Apply flag overrides ONLY if explicitly set by user (not using defaults)
     # Use FLAGS['flag_name'].present to check if user explicitly set the flag
     if FLAGS['postgres_gke_shared_buffers'].present:
         pg_config['shared_buffers'] = FLAGS.postgres_gke_shared_buffers
@@ -635,11 +638,9 @@ def _PreparePostgreSQLCluster(bm_spec: benchmark_spec.BenchmarkSpec) -> None:
 
     # Prepare template parameters
     resources = profile.get('resources', {})
-    logging.info('DEBUG: Applied Resources from Profile: %s', resources)
     
     template_params = {
         'namespace': 'default',
-        'postgres_version': '16',
         'postgres_version': '16',
         'postgres_user': 'benchmark',
         'postgres_password': _GetPostgresPassword(),
@@ -763,7 +764,7 @@ def _PreparePostgreSQLCluster(bm_spec: benchmark_spec.BenchmarkSpec) -> None:
     service_ip = stdout.strip() if stdout else 'postgres-standalone-0'
 
     bm_spec.postgres_service_ip = service_ip
-    logging.info(f'PostgreSQL service available at: {service_ip}')
+    logging.info('PostgreSQL service available at: %s', service_ip)
 
 
 def _PrepareSysbenchClient(bm_spec: benchmark_spec.BenchmarkSpec) -> None:
@@ -953,7 +954,7 @@ def Run(bm_spec: benchmark_spec.BenchmarkSpec) -> List[sample.Sample]:
                           'bash', '-c', checkpoint_cmd]
             
             for i in range(3):
-                logging.info(f"Issuing Checkpoint {i+1}/3")
+                logging.info('Issuing Checkpoint %d/3', i+1)
                 vm_util.IssueCommand(kubectl_chk)
                 time.sleep(5)
 

@@ -414,6 +414,16 @@ def GetConfig(user_config: Dict[str, Any]) -> Dict[str, Any]:
                 'container/postgres_sysbench/hugepages-node-config.yaml'
             )
             
+            # FIX: GKE applies the system config globally to ALL nodepools upon creation.
+            # Upgrade default nodepool to bypass GKE's 8GB crash validation limit
+            try:
+                server_machine = config['container_cluster']['nodepools']['postgres']['vm_spec']['GCP']['machine_type']
+            except KeyError:
+                server_machine = 'c4-standard-16' # fallback
+                
+            config['container_cluster']['vm_spec']['GCP']['machine_type'] = server_machine
+            logging.info('Upgraded default cluster nodepool to %s to satisfy HugePages allocation requirements.', server_machine)
+
     return config
 
 def _GetPostgresPassword() -> str:
@@ -482,7 +492,7 @@ def _PrepareCluster(bm_spec) -> None:
         count_2m = hugepages['hugepage_size2m']
         size_mi = count_2m * 2
         hugepages_2mi_request = f"{size_mi}Mi"
-        logging.info(f'HugePages enabled: Requesting {hugepages_2mi_request} (Count: {count_2m})')
+        logging.info('HugePages enabled: Requesting %s (Count: %s)', hugepages_2mi_request, count_2m)
         logging.info('Reducing standard memory request to 15Gi to fit node capacity.')
         memory_request = '15Gi'
         memory_limit = '15Gi'
@@ -516,9 +526,6 @@ def _PrepareCluster(bm_spec) -> None:
         'postgres_parameters': profile['postgres']
     }
     
-    logging.info(f"DEBUG: cluster_params keys: {list(cluster_params.keys())}")
-    logging.info(f"DEBUG: hugepages_2mi_request value: '{cluster_params['hugepages_2mi_request']}'")
-
     with kubernetes_commands.CreateRenderedManifestFile(
         'container/postgres_cnpg/postgres_cluster.yaml.j2',
         cluster_params
@@ -632,7 +639,7 @@ def _PrepareSysbenchClient(bm_spec):
 def Prepare(bm_spec) -> None:
     # Respect the Storage Class flag passed from CLI (e.g. by postgres-ha-cnpg-baseline-runcount.sh)
     sc_name = FLAGS.postgres_cnpg_storage_class
-    logging.info(f"Using Storage Class from Flag: {sc_name}")
+    logging.info('Using Storage Class from Flag: %s', sc_name)
 
     _InstallCNPGOperator(bm_spec.container_cluster, sc_name)
     _PrepareCluster(bm_spec)
@@ -662,7 +669,7 @@ def Run(bm_spec) -> List[sample.Sample]:
     logging.info("Executing 3 Checkpoints to flush buffers...")
     checkpoint_cmd = f'PGPASSWORD={_GetPostgresPassword()} psql -h gke-pg-cluster-rw -U benchmark -d benchmark -c "CHECKPOINT;"'
     for i in range(3):
-        logging.info(f"Issuing Checkpoint {i+1}/3")
+        logging.info('Issuing Checkpoint %d/3', i+1)
         _RunSysbenchCommand(bm_spec, checkpoint_cmd)
         time.sleep(5)
 
@@ -695,20 +702,15 @@ def _RunSysbenchCommand(bm_spec, cmd, timeout=None):
 
 def Cleanup(bm_spec) -> None:
     """Cleanup resources."""
-    logging.info('Cleaning up (Deleting Cluster CRD and PVCs)...')
+    logging.info('Cleaning up (Deleting Cluster CRD and Client)...')
     
-    # 1. Delete the Postgres Cluster CRD (this triggers the operator to delete the pods)
+    # 1. Delete the Postgres Cluster CRD (Triggering StatefulSet termination)
     cmd = [FLAGS.kubectl, '--kubeconfig', FLAGS.kubeconfig, 'delete', 'cluster', 'gke-pg-cluster', '-n', 'default', '--ignore-not-found']
     vm_util.IssueCommand(cmd)
 
-    # 2. Delete the Client Pod
+    # 2. Delete the Sysbench Client Pod
     cmd = [FLAGS.kubectl, '--kubeconfig', FLAGS.kubeconfig, 'delete', 'pod', 'postgres-client', '-n', 'default', '--ignore-not-found']
     vm_util.IssueCommand(cmd)
-    
-    # 3. Explicitly delete all PVCs to ensure disks are released
-    # Note: Sometimes the operator might recreate them faster than we delete if the cluster object isn't fully gone,
-    # but doing this is critical for persistent storage cleanup.
-    cmd = [FLAGS.kubectl, '--kubeconfig', FLAGS.kubeconfig, 'delete', 'pvc', '--all', '-n', 'default', '--ignore-not-found']
-    vm_util.IssueCommand(cmd)
 
+    # 3. PKB's core Teardown logic will automatically handle PVC deletion since we disabled pvcProtection!
     logging.info('Cleanup complete.')
