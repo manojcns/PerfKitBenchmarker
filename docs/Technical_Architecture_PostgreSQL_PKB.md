@@ -46,7 +46,7 @@ python3 pkb.py \
 The benchmark supports granular optimization profiles that can be combined:
 
 *   **v1 (Infrastructure)**: Uses Container-Optimized OS (COS) for nodes and Ubuntu 24.04 for the client.
-*   **v2 (Startup)**: Removes the init container for faster startup (at the cost of less robust permission handling).
+*   **v2 (Startup)**: Uses Ubuntu node image and removes the init container for faster startup (at the cost of less robust permission handling).
 *   **v3 (Kernel)**: Applies sysctl tuning (`vm.swappiness=1`, `vm.dirty_ratio=10`, etc.) to the node.
 *   **v4 (HugePages)**: Enables HugePages (2MB) on the node and configures PostgreSQL (`huge_pages=on`) to use them. This reduces TLB misses and improves memory management efficiency.
 *   **v6 (Postgres Tuning)**: Applies aggressive PostgreSQL configuration tuning (e.g., `shared_buffers=35GB`, `effective_io_concurrency=200`, `max_worker_processes=32`).
@@ -100,11 +100,10 @@ The benchmark automatically maps machine types to optimal disk types:
 *   The execution command includes a timeout buffer (`duration + 120s`) to prevent premature termination.
 
 ### 4. Password Handling & Security
-*   **Dynamic Password Generation**: To improve security and isolation, passwords are not hardcoded. A unique password is dynamically generated for each benchmark run based on the `Run URI` (e.g., `c4v6...`).
-*   **Secure Hashing**: The benchmark computes an MD5 hash of the password (concatenated with the username) before executing the `ALTER USER` command. This ensures that the plaintext password is never stored directly in the database's user table, aligning with PostgreSQL `md5` authentication best practices.
+*   **Dynamic Password Generation**: A unique password is generated per benchmark run based on the Run URI, ensuring isolation between runs. The plaintext password is never hardcoded or stored in source control. PostgreSQL handles password hashing internally on the server side.
 *   **Secret Management**:
-    *   **Server Side**: A Kubernetes Secret (`gke-pg-cluster-superuser`) stores the initial superuser password.
-    *   **Client Side**: The benchmark retrieves this secret and passes it to the `sysbench` client pod securely via the `PGPASSWORD` environment variable, preventing it from appearing in process listings or command-line logs.
+    *   **Standalone**: Password is injected into the PostgreSQL pod via the StatefulSet manifest and passed to the Sysbench client via the `PGPASSWORD` environment variable, preventing it from appearing in process listings or command-line logs.
+    *   **HA (CNPG)**: The CNPG operator creates a Kubernetes Secret (`gke-pg-cluster-superuser`) containing the superuser credentials, which the benchmark retrieves and passes to the Sysbench client via `PGPASSWORD`.
 
 ## High Availability (HA) Benchmark Implementation
 

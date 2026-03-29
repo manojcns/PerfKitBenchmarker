@@ -2,11 +2,20 @@
 
 ## Overview
 
-PerfKitBenchmarker has a built-in benchmark called `postgres_sysbench_gke` that:
-- Creates a GKE cluster automatically.
-- Deploys PostgreSQL (StatefulSet) and Sysbench (Client Pod).
-- Runs the Sysbench OLTP Read/Write workload.
-- Measures TPS (Transactions Per Second), QPS (Queries Per Second), and Latency.
+This guide covers two newly implemented PKB benchmark modules for PostgreSQL
+performance automation on Google Kubernetes Engine (GKE):
+
+- **`postgres_sysbench_gke`** — Standalone PostgreSQL benchmark: deploys a
+  single PostgreSQL instance as a Kubernetes StatefulSet and runs Sysbench OLTP
+  workloads from a client pod within the same cluster.
+- **`postgres_cnpg_benchmark`** — High Availability (HA) PostgreSQL benchmark:
+  deploys a 3-node HA cluster using the CloudNativePG (CNPG) operator and runs
+  the same Sysbench workloads against the primary read-write service.
+
+Both benchmarks:
+- Create and tear down GKE infrastructure automatically via PKB.
+- Measure TPS (Transactions Per Second), QPS (Queries Per Second), and Latency.
+- Support multiple optimization profiles for tuning PostgreSQL and GKE node configuration.
 
 ## Architecture Overview
 
