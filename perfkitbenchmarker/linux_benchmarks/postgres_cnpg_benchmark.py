@@ -216,6 +216,11 @@ OPTIMIZATION_PROFILES = {
         },
     },
     'v4': {
+        # Matches standalone benchmark (postgres_sysbench_gke_benchmark.py) v4 exactly.
+        # Container memory covers only regular RAM (13.5Gi); HugePages (38Gi) are
+        # allocated from the node's hugepage pool separately. Each HA replica lands on
+        # its own dedicated node via CNPG anti-affinity, so per-node math is identical
+        # to standalone (one pod per node).
         'postgres': {
             'shared_buffers': '15GB',
             'max_connections': 1000,
@@ -236,8 +241,8 @@ OPTIMIZATION_PROFILES = {
         'resources': {
             'cpu_request': '14',
             'cpu_limit': '15',
-            'memory_request': '15Gi',
-            'memory_limit': '15Gi',
+            'memory_request': '13.5Gi',
+            'memory_limit': '13.5Gi',
         },
         'use_init_container': True,
         'node_image': 'UBUNTU_CONTAINERD',
@@ -338,10 +343,11 @@ OPTIMIZATION_PROFILES = {
             'log_min_duration_statement': '1000',
         },
         'resources': {
+            # Matches standalone: 13.5Gi covers regular RAM only; HugePages from node pool.
             'cpu_request': '14',
             'cpu_limit': '15',
-            'memory_request': '15Gi',
-            'memory_limit': '15Gi',
+            'memory_request': '13.5Gi',
+            'memory_limit': '13.5Gi',
         },
         'use_init_container': True,
         'node_image': 'COS_CONTAINERD',
@@ -384,10 +390,11 @@ OPTIMIZATION_PROFILES = {
             'log_min_duration_statement': '1000',
         },
         'resources': {
+            # Matches standalone: 13.5Gi covers regular RAM only; HugePages from node pool.
             'cpu_request': '14',
             'cpu_limit': '15',
-            'memory_request': '15Gi',
-            'memory_limit': '15Gi',
+            'memory_request': '13.5Gi',
+            'memory_limit': '13.5Gi',
         },
         'use_init_container': True,
         'node_image': 'COS_CONTAINERD',
@@ -493,9 +500,13 @@ def _PrepareCluster(bm_spec) -> None:
         size_mi = count_2m * 2
         hugepages_2mi_request = f"{size_mi}Mi"
         logging.info('HugePages enabled: Requesting %s (Count: %s)', hugepages_2mi_request, count_2m)
-        logging.info('Reducing standard memory request to 15Gi to fit node capacity.')
-        memory_request = '15Gi'
-        memory_limit = '15Gi'
+        # Use profile-defined memory values. HugePages are allocated from the node's
+        # hugepage pool separately from regular memory. With CNPG anti-affinity
+        # (one pod per node), the per-node math is identical to the standalone benchmark.
+        # Fallback to 13.5Gi only if the profile doesn't define memory explicitly.
+        memory_request = resources.get('memory_request', '13.5Gi')
+        memory_limit = resources.get('memory_limit', '13.5Gi')
+        logging.info('HugePages memory: request=%s limit=%s', memory_request, memory_limit)
     else:
         logging.info('HugePages disabled: Using full memory profile.')
         memory_request = resources.get('memory_request', '45Gi')
@@ -637,6 +648,8 @@ def _PrepareSysbenchClient(bm_spec):
         _RunInstallCmd(cmd)
 
 def Prepare(bm_spec) -> None:
+    bm_spec.always_call_cleanup = True
+
     # Respect the Storage Class flag passed from CLI (e.g. by postgres-ha-cnpg-baseline-runcount.sh)
     sc_name = FLAGS.postgres_cnpg_storage_class
     logging.info('Using Storage Class from Flag: %s', sc_name)
@@ -702,7 +715,8 @@ def _RunSysbenchCommand(bm_spec, cmd, timeout=None):
 
 def Cleanup(bm_spec) -> None:
     """Cleanup resources."""
-    logging.info('Cleaning up (Deleting Cluster CRD and Client)...')
+    logging.info('Cleaning up Postgres Cluster CRD and Client...')
+    import time
     
     # 1. Delete the Postgres Cluster CRD (Triggering StatefulSet termination)
     cmd = [FLAGS.kubectl, '--kubeconfig', FLAGS.kubeconfig, 'delete', 'cluster', 'gke-pg-cluster', '-n', 'default', '--ignore-not-found']
@@ -712,5 +726,23 @@ def Cleanup(bm_spec) -> None:
     cmd = [FLAGS.kubectl, '--kubeconfig', FLAGS.kubeconfig, 'delete', 'pod', 'postgres-client', '-n', 'default', '--ignore-not-found']
     vm_util.IssueCommand(cmd)
 
-    # 3. PKB's core Teardown logic will automatically handle PVC deletion since we disabled pvcProtection!
+    # 3. Give the Operator time to gracefully shut down the Postgres processes and delete the pods.
+    # If we don't wait, Kubernetes keeps the underlying volumes locked because the pods are still terminating!
+    logging.info('Waiting 60 seconds for CNPG Operator to safely terminate all replicas...')
+    time.sleep(60)
+    
+    # 4. Strip finalizers from orphaned PVCs purely in Python using foolproof JSON patches
+    logging.info('Removing finalizers from PVCs...')
+    try:
+        get_pvc_cmd = [FLAGS.kubectl, '--kubeconfig', FLAGS.kubeconfig, 'get', 'pvc', '-n', 'default', '-o', 'name']
+        stdout, _, _ = vm_util.IssueCommand(get_pvc_cmd, raise_on_failure=False)
+        if stdout:
+            for pvc in stdout.splitlines():
+                if pvc.strip():
+                    # JSON patch explicitly removes the key rather than attempting implicit merge overrides
+                    patch_cmd = [FLAGS.kubectl, '--kubeconfig', FLAGS.kubeconfig, 'patch', pvc.strip(), '-n', 'default', '--type=json', '-p', '[{"op": "remove", "path": "/metadata/finalizers"}]']
+                    vm_util.IssueCommand(patch_cmd, raise_on_failure=False)
+    except Exception as e:
+        logging.warning("Error while stripping finalizers: %s", e)
+
     logging.info('Cleanup complete.')
